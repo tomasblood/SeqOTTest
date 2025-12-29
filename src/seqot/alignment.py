@@ -7,6 +7,7 @@ from scipy.linalg import orthogonal_procrustes
 from sklearn.decomposition import PCA
 
 from .sinkhorn import ForwardBackwardSinkhorn
+from .gromov_wasserstein import SequentialGromovWasserstein
 from .utils import compute_cosine_distance, normalize_distribution
 
 
@@ -26,14 +27,22 @@ class GlobalSeqOTAlignment:
         Maximum iterations for Sinkhorn
     tol : float, default=1e-6
         Convergence tolerance
+    use_gromov : bool, default=False
+        Use Gromov-Wasserstein (compares internal geometries)
+        instead of standard OT (point-to-point distances)
+    metric : str, default='euclidean'
+        Distance metric for GW mode ('euclidean', 'sqeuclidean', 'cosine')
     verbose : bool, default=False
         Print progress information
     """
 
-    def __init__(self, epsilon=0.01, max_iter=1000, tol=1e-6, verbose=False):
+    def __init__(self, epsilon=0.01, max_iter=1000, tol=1e-6,
+                 use_gromov=False, metric='euclidean', verbose=False):
         self.epsilon = epsilon
         self.max_iter = max_iter
         self.tol = tol
+        self.use_gromov = use_gromov
+        self.metric = metric
         self.verbose = verbose
 
         self.solver_ = None
@@ -61,25 +70,47 @@ class GlobalSeqOTAlignment:
         """
         n_steps = len(embeddings)
 
-        # Compute cost matrices (cosine distance between consecutive steps)
-        self.cost_matrices_ = []
-        for t in range(n_steps - 1):
-            C = compute_cosine_distance(embeddings[t], embeddings[t + 1])
-            self.cost_matrices_.append(C)
+        if self.use_gromov:
+            # Use Gromov-Wasserstein (compares internal geometries)
+            if self.verbose:
+                print("Using Gromov-Wasserstein alignment...")
 
-        # Solve the global SeqOT problem
-        self.solver_ = ForwardBackwardSinkhorn(
-            epsilon=self.epsilon,
-            max_iter=self.max_iter,
-            tol=self.tol,
-            verbose=self.verbose
-        )
+            self.solver_ = SequentialGromovWasserstein(
+                epsilon=self.epsilon,
+                max_outer_iter=self.max_iter,
+                max_inner_iter=100,
+                tol=self.tol,
+                metric=self.metric,
+                verbose=self.verbose
+            )
 
-        self.solver_.fit(self.cost_matrices_, mu=mu, nu=nu)
-        self.couplings_ = self.solver_.get_couplings()
+            aligned_embeddings = self.solver_.fit_transform(embeddings, mu=mu, nu=nu)
+            self.couplings_ = self.solver_.get_couplings()
 
-        # Align embeddings by transporting them through the optimal couplings
-        aligned_embeddings = self._transport_embeddings(embeddings)
+        else:
+            # Use standard OT (point-to-point distances)
+            if self.verbose:
+                print("Using standard OT alignment...")
+
+            # Compute cost matrices (cosine distance between consecutive steps)
+            self.cost_matrices_ = []
+            for t in range(n_steps - 1):
+                C = compute_cosine_distance(embeddings[t], embeddings[t + 1])
+                self.cost_matrices_.append(C)
+
+            # Solve the global SeqOT problem
+            self.solver_ = ForwardBackwardSinkhorn(
+                epsilon=self.epsilon,
+                max_iter=self.max_iter,
+                tol=self.tol,
+                verbose=self.verbose
+            )
+
+            self.solver_.fit(self.cost_matrices_, mu=mu, nu=nu)
+            self.couplings_ = self.solver_.get_couplings()
+
+            # Align embeddings by transporting them through the optimal couplings
+            aligned_embeddings = self._transport_embeddings(embeddings)
 
         return aligned_embeddings
 
