@@ -231,9 +231,9 @@ def tunneling_score(couplings, bridge_indices):
     Parameters
     ----------
     couplings : list of np.ndarray
-        Transport matrices
+        Transport matrices [P^(0→1), P^(1→2), ..., P^(N-2→N-1)]
     bridge_indices : list of list of int
-        For each time step t, the indices of bridge points
+        For each time step [0, 1, ..., N-1], the indices of bridge points
 
     Returns
     -------
@@ -242,13 +242,13 @@ def tunneling_score(couplings, bridge_indices):
     """
     bridge_mass = []
 
-    for t, (P, bridges) in enumerate(zip(couplings, bridge_indices)):
-        if t < len(couplings) - 1:
-            # Mass entering bridges (column sums for bridge columns)
-            mass = np.sum(P[:, bridges])
-        else:
-            # For the last step, check row sums
-            mass = np.sum(P[bridges, :])
+    for t, P in enumerate(couplings):
+        # P transports from time t to time t+1
+        # We want to measure mass going INTO bridge points at time t+1
+        target_bridges = bridge_indices[t + 1]
+
+        # Mass entering target bridges (sum over columns for bridge points)
+        mass = np.sum(P[:, target_bridges])
 
         bridge_mass.append(mass)
 
