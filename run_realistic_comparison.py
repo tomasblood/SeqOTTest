@@ -45,10 +45,10 @@ print("\n[1/5] Creating realistic NeurIPS-scale embeddings...")
 print("-" * 70)
 
 data_path = create_sample_neurips_data(
-    output_path='data/neurips/realistic_neurips_embeddings.pkl',
-    n_years=6,               # 2015-2020
-    n_papers_per_year=150,   # Smaller for faster demo
-    n_dims=256,              # Reduced dimensions (faster)
+    output_path='data/neurips/gw_demo_embeddings.pkl',
+    n_years=5,               # 2016-2020 (fewer years for faster GW)
+    n_papers_per_year=50,    # Small enough for GW to complete
+    n_dims=128,              # Reduced dimensions
     random_state=42
 )
 
@@ -73,13 +73,15 @@ print("-" * 70)
 
 t0 = time()
 aligner_gw = GlobalSeqOTAlignment(
-    epsilon=0.5,           # Higher epsilon for faster convergence
-    max_iter=20,           # Fewer iterations (GW is slow)
-    use_gromov=True,       # Enable GW!
+    epsilon=1.0,           # Higher epsilon = faster convergence, less precise
+    max_iter=15,           # Outer GW iterations
+    tol=1e-4,              # Relaxed tolerance for faster convergence
+    use_gromov=True,       # ← Enable Gromov-Wasserstein!
     metric='euclidean',
     verbose=True
 )
 
+print("Starting GW optimization (this may take a few minutes)...")
 aligned_gw = aligner_gw.fit_transform(embeddings)
 t_gw = time() - t0
 
@@ -99,18 +101,10 @@ aligned_procrustes = aligner_procrustes.fit_transform(embeddings)
 t_procrustes = time() - t0
 print(f"✓ Procrustes completed in {t_procrustes:.1f}s")
 
-# Aligned UMAP
-print("\nRunning Aligned UMAP...")
-t0 = time()
-aligner_umap = AlignedUMAPAlignment(
-    n_components=min(30, embeddings[0].shape[1]),  # Reduce dims for faster UMAP
-    n_neighbors=15,
-    min_dist=0.1,
-    verbose=True
-)
-aligned_umap = aligner_umap.fit_transform(embeddings)
-t_umap = time() - t0
-print(f"✓ Aligned UMAP completed in {t_umap:.1f}s")
+# Skip UMAP for now - focus on GW vs Procrustes comparison
+print("\nSkipping Aligned UMAP (focusing on GW demonstration)...")
+aligned_umap = None
+t_umap = 0
 
 # ============================================================================
 # 4. EVALUATE AND COMPARE
@@ -123,13 +117,11 @@ target = [embeddings[0]] * len(embeddings)
 
 results_gw = evaluate_alignment(embeddings, target, aligned_gw, "Global SeqOT (GW)")
 results_procrustes = evaluate_alignment(embeddings, target, aligned_procrustes, "Procrustes")
-results_umap = evaluate_alignment(embeddings, target, aligned_umap, "Aligned UMAP")
 
 # Create comparison dictionary
 results_dict = {
     'Global SeqOT (GW)': results_gw,
-    'Procrustes': results_procrustes,
-    'Aligned UMAP': results_umap
+    'Procrustes': results_procrustes
 }
 
 print("\n" + "=" * 70)
@@ -162,13 +154,12 @@ print("=" * 70)
 
 gw_error = results_gw['mean_euclidean_error']
 proc_error = results_procrustes['mean_euclidean_error']
-umap_error = results_umap['mean_euclidean_error']
 
 improvement_vs_proc = (proc_error - gw_error) / proc_error * 100
-improvement_vs_umap = (umap_error - gw_error) / umap_error * 100
 
 print(f"\nVs Procrustes:    {improvement_vs_proc:+.1f}% {'✓' if improvement_vs_proc > 0 else '✗'}")
-print(f"Vs Aligned UMAP:  {improvement_vs_umap:+.1f}% {'✓' if improvement_vs_umap > 0 else '✗'}")
+print(f"  GW Error:         {gw_error:.4f}")
+print(f"  Procrustes Error: {proc_error:.4f}")
 
 # Runtime comparison
 print("\n" + "=" * 70)
@@ -176,16 +167,12 @@ print("RUNTIME COMPARISON")
 print("=" * 70)
 print(f"  Global SeqOT (GW): {t_gw:6.1f}s")
 print(f"  Procrustes:        {t_procrustes:6.1f}s")
-print(f"  Aligned UMAP:      {t_umap:6.1f}s")
 
-if improvement_vs_proc > 0 and improvement_vs_umap > 0:
-    print("\n✓ Global SeqOT with GW outperforms both baselines!")
-elif improvement_vs_proc > 0:
-    print("\n✓ Global SeqOT with GW outperforms Procrustes")
-elif improvement_vs_umap > 0:
-    print("\n✓ Global SeqOT with GW outperforms Aligned UMAP")
+if improvement_vs_proc > 0:
+    print(f"\n✓ Global SeqOT with GW achieves {abs(improvement_vs_proc):.1f}% better alignment!")
+    print("  By comparing internal geometries (GW), not just point-to-point distances")
 else:
-    print("\n⚠ Baselines competitive - consider tuning epsilon or data complexity")
+    print(f"\n⚠ Procrustes competitive - consider tuning epsilon or more complex data")
 
 # ============================================================================
 # 5. GENERATE VISUALIZATIONS
@@ -208,8 +195,7 @@ print("  Generating PCA temporal evolution...")
 embeddings_dict = {
     'Original': embeddings,
     'Global SeqOT (GW)': aligned_gw,
-    'Procrustes': aligned_procrustes,
-    'Aligned UMAP': aligned_umap
+    'Procrustes': aligned_procrustes
 }
 
 fig = plot_temporal_evolution_2d(
@@ -259,18 +245,17 @@ results_summary = {
     },
     'runtime_seconds': {
         'global_seqot_gw': float(t_gw),
-        'procrustes': float(t_procrustes),
-        'aligned_umap': float(t_umap)
+        'procrustes': float(t_procrustes)
     },
     'methods': list(results_dict.keys()),
     'metrics': {
-        method: {k: float(v) if not isinstance(v, (list, dict)) else v
+        method: {k: (float(v) if isinstance(v, (int, float, np.number)) else
+                    (v.tolist() if isinstance(v, np.ndarray) else v))
                 for k, v in results.items()}
         for method, results in results_dict.items()
     },
     'improvements': {
-        'vs_procrustes_percent': float(improvement_vs_proc),
-        'vs_umap_percent': float(improvement_vs_umap)
+        'vs_procrustes_percent': float(improvement_vs_proc)
     }
 }
 
