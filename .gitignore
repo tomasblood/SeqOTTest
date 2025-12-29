@@ -44,6 +44,8 @@ Thumbs.db
 *.csv
 experiments/*.png
 experiments/*.pdf
+results/
+!results/.gitkeep
 
 # Data
 data/
