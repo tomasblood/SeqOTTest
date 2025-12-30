@@ -78,7 +78,7 @@ class GlobalSeqOTAlignment:
             self.solver_ = SequentialGromovWasserstein(
                 epsilon=self.epsilon,
                 max_outer_iter=self.max_iter,
-                max_inner_iter=100,
+                max_inner_iter=10,  # Reduced for faster convergence
                 tol=self.tol,
                 metric=self.metric,
                 verbose=self.verbose

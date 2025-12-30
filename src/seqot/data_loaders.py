@@ -290,13 +290,15 @@ def create_sample_neurips_data(output_path='data/neurips/sample_embeddings.pkl',
         'graph_neural_nets': rng.randn(n_dims),
     }
 
-    # Topic prevalence over time
+    # Topic prevalence over time - dynamically generate for n_years
+    # Create realistic trends: some topics rise, some fall, some stay constant
+    t = np.linspace(0, 1, n_years)
     topic_trends = {
-        'deep_learning': [0.4, 0.3, 0.2, 0.2, 0.15, 0.1],
-        'transformers': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
-        'gans': [0.2, 0.3, 0.3, 0.2, 0.15, 0.1],
-        'rl': [0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
-        'graph_neural_nets': [0.2, 0.1, 0.1, 0.1, 0.1, 0.1],
+        'deep_learning': 0.4 * (1 - 0.7 * t),  # Declining from saturation
+        'transformers': 0.5 * t,  # Rising (newer topic)
+        'gans': 0.3 * np.exp(-2 * t),  # Declining exponentially
+        'rl': 0.2 + 0 * t,  # Constant
+        'graph_neural_nets': 0.1 + 0.1 * t,  # Slowly rising
     }
 
     for year_idx in range(n_years):

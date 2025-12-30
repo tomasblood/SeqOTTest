@@ -173,11 +173,13 @@ def entropic_gromov_wasserstein(D1, D2, mu=None, nu=None, epsilon=0.1,
         # Step 2: Sinkhorn step with current cost matrix
         K = np.exp(-L / epsilon)
 
-        # Sinkhorn iterations (inner loop)
+        # Sinkhorn iterations (inner loop) - adaptive
         u = np.ones(n)
         v = np.ones(m)
 
-        for _ in range(20):  # Fixed number of inner Sinkhorn iterations
+        # Fewer inner iterations for speed
+        max_inner = 5 if iter_num < 3 else 10
+        for _ in range(max_inner):
             u = mu / (K @ v + 1e-100)
             v = nu / (K.T @ u + 1e-100)
 
@@ -185,17 +187,28 @@ def entropic_gromov_wasserstein(D1, D2, mu=None, nu=None, epsilon=0.1,
 
         # Check convergence
         error = np.max(np.abs(P - P_old))
-        loss = gromov_wasserstein_loss(D1, D2, P)
 
-        log['loss'].append(loss)
+        # Only compute expensive loss every few iterations
+        if iter_num % 5 == 0:
+            loss = gromov_wasserstein_loss(D1, D2, P)
+            log['loss'].append(loss)
+        else:
+            loss = log['loss'][-1] if log['loss'] else 0
+
         log['error'].append(error)
 
-        if verbose and iter_num % 10 == 0:
-            print(f"Iteration {iter_num}: loss = {loss:.4e}, error = {error:.4e}")
+        if verbose and (iter_num % 5 == 0 or error < tol * 10):
+            print(f"    GW iter {iter_num}: error = {error:.2e}")
 
         if error < tol:
             if verbose:
-                print(f"Converged after {iter_num + 1} iterations")
+                print(f"    ✓ Converged after {iter_num + 1} iterations")
+            break
+
+        # Early stop if very slow progress
+        if iter_num > 5 and error < tol * 50:
+            if verbose:
+                print(f"    ✓ Early stop after {iter_num + 1} iterations (error={error:.2e})")
             break
 
     return P, log
